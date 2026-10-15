@@ -5,11 +5,164 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Hostel Speed Test Capture</title>
+  <title>Hostel Internet Speed Test</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 700px;
+      margin: 35px auto;
+      padding: 20px;
+      line-height: 1.6;
+      color: #202124;
+    }
+    button, .link {
+      display: inline-block;
+      padding: 12px 18px;
+      margin: 8px 5px 8px 0;
+      border: 0;
+      border-radius: 5px;
+      background: #1967d2;
+      color: white;
+      text-decoration: none;
+      cursor: pointer;
+      font-size: 15px;
+    }
+    button:disabled { opacity: .6; cursor: wait; }
+    #status { margin-top: 18px; font-weight: bold; }
+    .note { background: #f1f3f4; padding: 12px; border-radius: 6px; }
+  </style>
 </head>
-<body style="font-family:Arial,sans-serif;max-width:650px;margin:50px auto;padding:20px">
-  <h1>Hostel Speed Test Capture</h1>
-  <p>GitHub Pages hosting is working.</p>
-  <p>The automatic screenshot integration will be configured next.</p>
+<body>
+  <h2>Hostel Internet Speed Test</h2>
+
+  <p>Complete the Google speed test and submit a screenshot for your complaint.</p>
+
+  <ol>
+    <li>Click the button below to open Google Search's speed test.</li>
+    <li>Run the test and wait until the results appear.</li>
+    <li>Return to this page and click <b>Capture Google Test Screenshot</b>.</li>
+    <li>In the browser prompt, select the Google speed-test tab and approve sharing.</li>
+  </ol>
+
+  <a class="link"
+     href="https://www.google.com/search?q=speed+test"
+     target="_blank"
+     rel="noopener">
+    Open Google Speed Test
+  </a>
+
+  <p>
+    <button id="captureBtn" onclick="captureAndSend()">
+      Capture Google Test Screenshot
+    </button>
+  </p>
+
+  <div class="note">
+    The browser requires your permission to capture the selected tab.
+    Keep the Google test results visible before capturing.
+  </div>
+
+  <p id="status">Checking complaint link…</p>
+
+  <script>
+    const APPS_SCRIPT_URL =
+      "https://script.google.com/a/macros/tmi.tolani.edu/s/AKfycbxAM6-j6CRHWg6L2fMpvdRNVlgtAb1MZ7rVFMj_7OnHh57bflfJxabX46-pIQtARDB6/exec";
+
+    const params = new URLSearchParams(window.location.search);
+    const row = Number(params.get("row"));
+    const token = params.get("token") || "";
+
+    const statusEl = document.getElementById("status");
+    const captureBtn = document.getElementById("captureBtn");
+
+    if (!Number.isInteger(row) || row < 2 || !token) {
+      statusEl.textContent =
+        "Invalid or missing complaint link. Please open the link from your complaint email.";
+      captureBtn.disabled = true;
+    } else {
+      statusEl.textContent =
+        "Complaint link detected. Run the Google test before capturing.";
+    }
+
+    async function captureAndSend() {
+      if (!Number.isInteger(row) || row < 2 || !token) {
+        statusEl.textContent = "Invalid complaint link.";
+        return;
+      }
+
+      captureBtn.disabled = true;
+      let stream;
+
+      try {
+        statusEl.textContent =
+          "Choose the Google speed-test tab in the browser sharing prompt…";
+
+        stream = await navigator.mediaDevices.getDisplayMedia({
+          video: true,
+          audio: false
+        });
+
+        const video = document.createElement("video");
+        video.muted = true;
+        video.srcObject = stream;
+
+        await new Promise((resolve, reject) => {
+          video.onloadedmetadata = resolve;
+          video.onerror = reject;
+          setTimeout(() => reject(new Error("Screen capture timed out.")), 15000);
+        });
+
+        await video.play();
+
+        if (!video.videoWidth || !video.videoHeight) {
+          throw new Error("Could not read the selected screen.");
+        }
+
+        const canvas = document.createElement("canvas");
+        const scale = Math.min(1, 1600 / video.videoWidth);
+
+        canvas.width = Math.round(video.videoWidth * scale);
+        canvas.height = Math.round(video.videoHeight * scale);
+
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+        const dataUrl = canvas.toDataURL("image/jpeg", 0.78);
+
+        // Stop capture immediately after taking the screenshot.
+        stream.getTracks().forEach(track => track.stop());
+        stream = null;
+
+        statusEl.textContent = "Sending screenshot to the complaint record…";
+
+        // text/plain avoids a JSON CORS preflight. With no-cors, the
+        // browser does not expose the server's response to this page.
+        await fetch(APPS_SCRIPT_URL, {
+          method: "POST",
+          mode: "no-cors",
+          headers: {
+            "Content-Type": "text/plain;charset=UTF-8"
+          },
+          body: JSON.stringify({
+            row: row,
+            token: token,
+            dataUrl: dataUrl
+          })
+        });
+
+        statusEl.textContent =
+          "Upload request sent. Please wait a moment, then verify that the screenshot link appears in column K.";
+      } catch (err) {
+        statusEl.textContent =
+          "Capture/upload could not be completed: " + err.message +
+          " Please retry and approve the browser sharing prompt.";
+      } finally {
+        if (stream) {
+          stream.getTracks().forEach(track => track.stop());
+        }
+        captureBtn.disabled = false;
+      }
+    }
+  </script>
 </body>
 </html>
